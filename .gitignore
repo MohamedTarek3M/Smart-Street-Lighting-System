@@ -1,0 +1,36 @@
+# --- Arduino / ESP32 ---
+build/
+bin/
+*.elf
+*.bin
+*.hex
+*.dfu
+*.map
+*.lst
+
+# --- Python (for dashboard tools) ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- User Configuration ---
+*.local
+credentials.h
+secrets.h
+
+# --- Logs ---
+*.log
+
+# --- Project Specific ---
+Wiki/
