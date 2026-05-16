@@ -153,7 +153,7 @@ Download the latest version of the Arduino IDE from the official site: [Arduino 
 2. Go to `File > Preferences`.
 3. In the "Additional Board Manager URLs" field, add the following URL:
    ```sh
-    https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
    ```
 4. Click OK to save.
 5. Go to `Tools > Board > Boards Manager`.
@@ -222,6 +222,15 @@ The system supports two concurrent ways to access the dashboard:
 **❓ How do I reset the ESP32 if it fails to upload?**
 * Hold the **BOOT** button on the board while clicking the Upload button in Arduino IDE.
 * Release the BOOT button when it starts connecting.
+
+**❓ What if the sensors (DHT22 or INA219) read 0 or NaN?**
+* **INA219**: Verify the I2C wiring (SDA to GPIO 21, SCL to GPIO 22) and ensure the sensor has a common ground with the ESP32.
+* **DHT22**: Ensure you have a 10k pull-up resistor between the Data pin and 3.3V.
+
+**❓ The dashboard is not loading or is unresponsive.**
+* Open the Serial Monitor (115200 baud) to verify the ESP32's current IP address and connection status.
+* Ensure you are connected to the correct WiFi network (either your router or the ESP32 AP).
+* Try refreshing the page or using a different browser (Chrome/Edge recommended).
 
 **❓ Can I use a different board?**
 * The code is written for the ESP32 platform. Other boards would require code modifications.
