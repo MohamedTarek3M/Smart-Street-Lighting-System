@@ -7,7 +7,7 @@
  * 
  * @description
  *              This firmware manages smart street lighting using an ESP32. It 
- *              features adaptive brightness based on LDR sensors, PIR motion 
+ *              features adaptive brightness based on LDR sensors, IR motion 
  *              detection, and battery health monitoring via INA219.
  *              
  *              Features: 
@@ -77,7 +77,6 @@ const char* passwordAP = "12345678";
 //  GPIO Pin Assignments
 // -----------------------------------------------------------------------------
 #define LDR_PIN         34  // Analog input
-#define PIR_PIN         27  // Digital input (PIR)
 #define IR_PIN          26  // Digital input (IR Obstacle Sensor)
 #define RAIN_PIN        25  // Digital input (supports internal pull-up)
 #define DHT_PIN         4   // Digital pin for DHT22
@@ -198,7 +197,6 @@ void setup() {
   Serial.begin(115200);
 
   // GPIO
-  pinMode(PIR_PIN, INPUT_PULLDOWN);
   pinMode(IR_PIN, INPUT_PULLUP); // IR module usually pulls LOW on detect
   pinMode(RAIN_PIN, INPUT_PULLUP); // Use pull-up to prevent floating when disconnected
   pinMode(LIGHT_BOX_PIN, OUTPUT);
@@ -308,9 +306,8 @@ void loop() {
   if (millis() - lastSensorMs >= SENSOR_INTERVAL) {
     lastSensorMs = millis();
     cachedLDR       = analogRead(LDR_PIN);
-    bool pirMotion  = digitalRead(PIR_PIN);
     bool irMotion   = (digitalRead(IR_PIN) == LOW); // IR is LOW when detected
-    cachedMotion    = (pirMotion || irMotion);
+    cachedMotion    = irMotion;
     if (ina219Found) {
       cachedVoltage   = ina219.getBusVoltage_V();
       cachedCurrentMa = ina219.getCurrent_mA();
@@ -327,7 +324,7 @@ void loop() {
     if (!isnan(t)) currentTemp = t;
   }
 
-  // Motion hold: track last time PIR actually fired
+  // Motion hold: track last time motion actually fired
   if (cachedMotion) lastMotionMs = millis();
   bool motionActive = (millis() - lastMotionMs < (unsigned long)motionHoldTime);
 
