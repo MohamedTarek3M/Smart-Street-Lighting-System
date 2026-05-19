@@ -491,10 +491,10 @@ void loop() {
           targetBrightness2 = targetBrightness1;
           irZ2Pending = false; // one-shot: reset so it can retrigger next time
         }
-        // If motion is no longer active and Zone 2's hold time has passed, let
-        // the normal motion-hold logic (via motionActive) dim Zone 2 naturally.
-        if (!motionActive) {
-          irZ2Pending = false; // cancel any pending trigger if motion cleared
+        // Only mirror Zone 1 dim-down AFTER the full motion hold has expired
+        // (motionActive is false AND no pending trigger still counting down).
+        // This avoids cancelling the countdown while Zone 1 is still bright.
+        if (!motionActive && !irZ2Pending) {
           targetBrightness2 = targetBrightness1; // follow Zone 1 dim-down
         }
       } else {
