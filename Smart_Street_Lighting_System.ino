@@ -115,14 +115,20 @@ int   motionHoldTime   = 5000;   // ms to hold full brightness after motion
 #define FOG_COLOR_G   88
 #define FOG_COLOR_B   44
 
-// -----------------------------------------------------------------------------
+// =============================================================================
 //  Runtime State (volatile for cross-core thread safety)
-// -----------------------------------------------------------------------------
+// =============================================================================
 volatile bool systemPower       = true;
 volatile bool overrideMode      = false;
 volatile int  targetBrightness1 = 0;
 volatile int  targetBrightness2 = 0;
 volatile bool lightBoxState     = false;
+
+//  IR → Zone 2 delayed activation
+volatile bool          irZ2Enabled   = true;   // can be disabled from dashboard
+volatile bool          irZ2Pending   = false;  // waiting for the 2-s delay
+volatile unsigned long irZ2TriggerMs = 0;      // millis() when motion was first seen
+const unsigned long    IR_Z2_DELAY   = 2000;   // 2-second delay before Zone 2 lights up
 
 //  Soft glow / breathing parameters
 volatile bool softGlowEnabled = true;
@@ -130,13 +136,13 @@ volatile int  glowMin   = 50;
 volatile int  glowMax   = 170;
 volatile int  glowSpeed = 1;
 volatile int  flashCounter = 0; // Thread-safe animation flag
-volatile int  glowR     = 0;
+volatile int  glowR     = 255;  // Default: White
 volatile int  glowG     = 255;
 volatile int  glowB     = 255;
 volatile bool partyModeEnabled  = false;
 unsigned long lastPartyMs       = 0;
 const int     PARTY_INTERVAL    = 600;
-int           currentR  = 0;
+int           currentR  = 255;  // Start fading from white
 int           currentG  = 255;
 int           currentB  = 255;
 
@@ -191,6 +197,135 @@ unsigned long lastShowMs   = 0;
 const unsigned long SHOW_INTERVAL   = 30;  // update LEDs at ~33 FPS
 
 // =============================================================================
+//  STARTUP LIGHT SEQUENCE  (non-blocking — millis-based state machine)
+// =============================================================================
+//
+//  Phases:
+//    SEQ_WIPE    — cyan LEDs wipe on one by one  (55 ms / LED)
+//    SEQ_SWEEP   — full-strip color sweep 4 colors (280 ms / color)
+//    SEQ_PULSE   — two white heartbeat pulses (130 ms bright / 110 ms dim)
+//    SEQ_HOLD    — hold full white                (220 ms)
+//    SEQ_FADEOUT — graceful brightness ramp to 0   (6 steps × 12 ms)
+//    SEQ_DONE    — sequence finished, sets startupDone = true
+//
+enum SeqPhase : uint8_t { SEQ_WIPE, SEQ_SWEEP, SEQ_PULSE, SEQ_HOLD, SEQ_FADEOUT, SEQ_DONE };
+
+SeqPhase      seqPhase      = SEQ_WIPE;
+uint8_t       seqIdx        = 0;   // per-phase sub-index (LED or color)
+uint8_t       seqPulseCount = 0;   // completed bright-periods so far
+bool          seqPulseHigh  = true;
+int           seqBright     = 255; // running brightness for fade-out
+unsigned long seqLastMs     = 0;   // timestamp of last step (0 = fire immediately)
+bool          startupDone   = false;
+
+void tickStartupSequence() {
+  if (startupDone) return;
+  unsigned long now = millis();
+
+  static const uint8_t pal[4][3] = {
+    {  0, 160, 255},   // cool blue
+    {140,  50, 255},   // violet
+    {255, 130,   0},   // warm amber
+    {255, 255, 255},   // pure white
+  };
+
+  switch (seqPhase) {
+
+    // ── Wipe: one LED every 55 ms ──────────────────────────────────────────
+    case SEQ_WIPE:
+      if (now - seqLastMs >= 55) {
+        seqLastMs = now;
+        leds[seqIdx] = CRGB(0, 220, 255);
+        FastLED.show();
+        seqIdx++;
+        if (seqIdx >= NUM_LEDS) {
+          // Enter SWEEP: show first color immediately, then wait for rest
+          seqIdx = 0;
+          fill_solid(leds, NUM_LEDS, CRGB(pal[0][0], pal[0][1], pal[0][2]));
+          FastLED.show();
+          seqIdx    = 1;     // next color index
+          seqLastMs = now;
+          seqPhase  = SEQ_SWEEP;
+        }
+      }
+      break;
+
+    // ── Sweep: change all LEDs every 280 ms ────────────────────────────────
+    case SEQ_SWEEP:
+      if (now - seqLastMs >= 280) {
+        seqLastMs = now;
+        fill_solid(leds, NUM_LEDS, CRGB(pal[seqIdx][0], pal[seqIdx][1], pal[seqIdx][2]));
+        FastLED.show();
+        seqIdx++;
+        if (seqIdx >= 4) {
+          // Enter PULSE: show first bright burst immediately
+          FastLED.setBrightness(255);
+          fill_solid(leds, NUM_LEDS, CRGB::White);
+          FastLED.show();
+          seqPulseHigh  = true;
+          seqPulseCount = 0;
+          seqLastMs     = now;
+          seqPhase      = SEQ_PULSE;
+        }
+      }
+      break;
+
+    // ── Pulse: 130 ms bright / 110 ms dim, twice ───────────────────────────
+    case SEQ_PULSE: {
+      unsigned long dur = seqPulseHigh ? 130UL : 110UL;
+      if (now - seqLastMs >= dur) {
+        seqLastMs    = now;
+        seqPulseHigh = !seqPulseHigh;
+        FastLED.setBrightness(seqPulseHigh ? 255 : 50);
+        fill_solid(leds, NUM_LEDS, CRGB::White);
+        FastLED.show();
+        if (seqPulseHigh) seqPulseCount++;   // count completed bright periods
+        if (seqPulseCount >= 2) {
+          // Enter HOLD: snap to full white
+          FastLED.setBrightness(255);
+          FastLED.show();
+          seqLastMs = now;
+          seqPhase  = SEQ_HOLD;
+        }
+      }
+      break;
+    }
+
+    // ── Hold white for 220 ms ──────────────────────────────────────────────
+    case SEQ_HOLD:
+      if (now - seqLastMs >= 220) {
+        seqBright = 255;
+        seqLastMs = now;
+        seqPhase  = SEQ_FADEOUT;
+      }
+      break;
+
+    // ── Fade-out: −6 brightness every 12 ms ───────────────────────────────
+    case SEQ_FADEOUT:
+      if (now - seqLastMs >= 12) {
+        seqLastMs  = now;
+        seqBright -= 6;
+        if (seqBright <= 0) {
+          FastLED.clear();
+          FastLED.setBrightness(255);
+          FastLED.show();
+          seqPhase   = SEQ_DONE;
+          startupDone = true;
+          Serial.println(F("[BOOT] Startup animation complete."));
+        } else {
+          FastLED.setBrightness((uint8_t)seqBright);
+          FastLED.show();
+        }
+      }
+      break;
+
+    case SEQ_DONE:
+      startupDone = true;
+      break;
+  }
+}
+
+// =============================================================================
 //  SETUP
 // =============================================================================
 void setup() {
@@ -214,14 +349,8 @@ void setup() {
   FastLED.addLeds<WS2812B, LED_PIN_P3, RGB>(leds, 4, 2).setCorrection(TypicalLEDStrip);
   FastLED.addLeds<WS2812B, LED_PIN_P4, RGB>(leds, 6, 2).setCorrection(TypicalLEDStrip);
   
-  FastLED.setBrightness(255); // Explicitly set brightness to ensure visibility
-
-  // Startup Flash: Prove LEDs work immediately
-  fill_solid(leds, NUM_LEDS, CRGB::Cyan);
-  FastLED.show();
-  delay(1000); // Increased to 1.0s for clear visibility during startup
-  FastLED.clear();
-  FastLED.show();
+  // Startup animation is now driven by tickStartupSequence() in loop()
+  // (no blocking delay — uses millis-based cooldowns)
 
   // DHT Sensor
   dht.begin();
@@ -271,6 +400,10 @@ void setup() {
 // =============================================================================
 void loop() {
   // server.handleClient(); // Now handled by ServerTask on Core 0
+
+  // --- Non-blocking startup animation (runs until startupDone = true) ---
+  tickStartupSequence();
+  if (!startupDone) return; // yield until animation completes
 
   // --- WiFi Connection Handshake (NTP, MDNS, etc.) ---
   bool isConnected = (WiFi.status() == WL_CONNECTED);
@@ -341,13 +474,37 @@ void loop() {
   if (!systemPower) {
     targetBrightness1 = 0;
     targetBrightness2 = 0;
+    irZ2Pending = false; // reset pending state when system is off
   } else if (!overrideMode) {
     if (cachedLDR < LDR_THRESHOLD) {
       targetBrightness1 = adaptiveGlow(cachedVoltage, motionActive);
-      targetBrightness2 = targetBrightness1;
+
+      // IR → Zone 2 delayed activation logic
+      if (irZ2Enabled) {
+        if (cachedMotion && !irZ2Pending) {
+          // Fresh motion detected — start the 2-second countdown
+          irZ2Pending   = true;
+          irZ2TriggerMs = millis();
+        }
+        if (irZ2Pending && (millis() - irZ2TriggerMs >= IR_Z2_DELAY)) {
+          // Delay elapsed — turn on Zone 2 at the same brightness as Zone 1
+          targetBrightness2 = targetBrightness1;
+          irZ2Pending = false; // one-shot: reset so it can retrigger next time
+        }
+        // If motion is no longer active and Zone 2's hold time has passed, let
+        // the normal motion-hold logic (via motionActive) dim Zone 2 naturally.
+        if (!motionActive) {
+          irZ2Pending = false; // cancel any pending trigger if motion cleared
+          targetBrightness2 = targetBrightness1; // follow Zone 1 dim-down
+        }
+      } else {
+        // IR Zone 2 feature disabled — Zone 2 mirrors Zone 1 normally
+        targetBrightness2 = targetBrightness1;
+      }
     } else {
       targetBrightness1 = 0;
       targetBrightness2 = 0;
+      irZ2Pending = false;
     }
   }
 
@@ -586,7 +743,8 @@ void setupServer() {
     json += "\"r\":"           + String(glowR)               + ",";
     json += "\"g\":"           + String(glowG)               + ",";
     json += "\"b\":"           + String(glowB)               + ",";
-    json += "\"party\":"       + String(partyModeEnabled ? 1 : 0);
+    json += "\"party\":"       + String(partyModeEnabled ? 1 : 0) + ",";
+    json += "\"irz2\":"        + String(irZ2Enabled ? 1 : 0);
     json += "}";
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", json);
@@ -718,6 +876,14 @@ void setupServer() {
     digitalWrite(LIGHT_BOX_PIN2, LOW);
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "text/plain", lightBoxState ? "1" : "0");
+  });
+
+  // ── /irZ2Toggle — Enable / disable IR→Zone2 delayed activation ───────────
+  server.on("/irZ2Toggle", []() {
+    irZ2Enabled = !irZ2Enabled;
+    if (!irZ2Enabled) irZ2Pending = false; // cancel any in-progress delay
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "text/plain", irZ2Enabled ? "1" : "0");
   });
 
   // ── /flash — Flash physical LEDs for identification ──────────────────────

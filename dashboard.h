@@ -1069,9 +1069,18 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
 
       <!-- Zone 2 -->
       <div class="card zone2-card">
-        <div class="card-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2v1"/><path d="M12 7v1"/><path d="M12 12v1"/></svg>
-          Zone <span>2</span> Brightness
+        <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2v1"/><path d="M12 7v1"/><path d="M12 12v1"/></svg>
+            Zone <span>2</span> Brightness
+          </div>
+          <label class="switch-wrap" title="IR sensor triggers Zone 2 after 2 sec delay">
+            <span class="switch-label" style="font-size: 0.65rem;">IR Z2</span>
+            <div class="switch" style="transform: scale(0.8); transform-origin: right;">
+              <input type="checkbox" id="irZ2Check" checked onchange="toggleIrZ2(this.checked)">
+              <span class="slider-toggle"></span>
+            </div>
+          </label>
         </div>
         <div class="ring-wrap">
           <div class="ring-container">
@@ -1082,6 +1091,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
             <div class="ring-label" id="lbl2">0%</div>
           </div>
         </div>
+        <div id="irZ2StatusBadge" style="text-align:center; font-size:0.68rem; font-weight:700; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:8px; min-height:16px;"></div>
         <div class="slider-row">
           <label><span>Override Level</span> <span id="val2" style="color:#fff">0%</span></label>
           <input type="range" min="0" max="100" value="0" id="z2slider" oninput="syncZones(2, this.value); update();">
@@ -1305,6 +1315,27 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         }
       } catch(e) {} finally { isCmdBusy = false; }
     }
+
+    // ── IR Zone 2 Delayed Activation Toggle ──────────────────────────────
+    let irZ2Enabled = true;
+    const toggleIrZ2 = async (isOn) => {
+      irZ2Enabled = isOn;
+      updateIrZ2Badge();
+      try { await fastFetch('/irZ2Toggle'); } catch(e) {}
+    }
+
+    const updateIrZ2Badge = () => {
+      const badge = document.getElementById('irZ2StatusBadge');
+      if (!badge) return;
+      if (!irZ2Enabled) {
+        badge.style.color = 'var(--accent3)';
+        badge.textContent = '⛔ IR trigger disabled';
+      } else {
+        badge.style.color = 'var(--text-dim)';
+        badge.textContent = '⚡ Triggers 2 s after motion';
+      }
+    }
+    updateIrZ2Badge(); // initial render
 
     // ── Custom Lightweight Canvas Chart ──────────────────────────────────
     const drawLineChart = (canvasId, data, color, minVal, maxVal) => {
@@ -1617,6 +1648,14 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         glowEnabled = d.glow === 1; document.getElementById('btnGlow').classList.toggle('active', glowEnabled);
         const btnLightBox = document.getElementById('btnLightBox');
         if (btnLightBox) { lightBoxState = d.box === 1; btnLightBox.classList.toggle('active', lightBoxState); }
+
+        // Sync IR Zone 2 toggle state from firmware
+        if (typeof d.irz2 !== 'undefined') {
+          irZ2Enabled = (d.irz2 === 1);
+          const irZ2Check = document.getElementById('irZ2Check');
+          if (irZ2Check) irZ2Check.checked = irZ2Enabled;
+          updateIrZ2Badge();
+        }
 
         if (document.activeElement !== document.getElementById('cr') && document.activeElement !== document.getElementById('cg') && document.activeElement !== document.getElementById('cb')) {
           const r = d.r, g = d.g, b = d.b;
