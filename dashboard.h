@@ -1271,7 +1271,6 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
     }
 
     const cmd = async (c) => {
-      if (partyInt) toggleParty();
       const badge = document.getElementById('modeBadge');
       if (c === 'auto') {
         badge.innerHTML = 'AUTO';
@@ -1283,7 +1282,6 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
     }
 
     const togglePower = async (isOn) => {
-      if (partyInt) toggleParty();
       const wrap = document.getElementById('powerSwitchWrap');
       const status = document.getElementById('powerStatus');
       wrap.className = isOn ? 'power-switch-wrap is-on' : 'power-switch-wrap is-off';
@@ -1516,7 +1514,6 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
     });
 
     const setBrightness = async (val) => {
-      if (partyInt) toggleParty();
       document.getElementById('z1slider').value = val; document.getElementById('z2slider').value = val;
       document.getElementById('val1').textContent = val + '%'; document.getElementById('val2').textContent = val + '%';
       updateRing('ring1', 'lbl1', val); updateRing('ring2', 'lbl2', val);
@@ -1527,7 +1524,6 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
 
     let flashInt = null;
     const flashZones = () => {
-      if (partyInt) toggleParty();
       safeCmd('/flash'); // Trigger physical LEDs
       if (flashInt) { clearInterval(flashInt); flashInt = null; return; }
       let flashState = false;
@@ -1614,7 +1610,7 @@ const char DASHBOARD_HTML[] PROGMEM = R"rawhtml(
         }
 
         const badge = document.getElementById('modeBadge');
-        if (partyInt) { badge.innerHTML = 'PARTY'; badge.className = 'mode-badge mode-party';
+        if (d.party) { badge.innerHTML = 'PARTY'; badge.className = 'mode-badge mode-party';
         } else if (d.mode === 'auto') { badge.innerHTML = 'AUTO'; badge.className = 'mode-badge mode-auto';
         } else {
           if (d.z1 == 0 && d.z2 == 0) { badge.innerHTML = 'OFF'; badge.className = 'mode-badge mode-off';
