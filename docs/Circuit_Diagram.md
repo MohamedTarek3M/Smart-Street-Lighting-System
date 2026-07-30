@@ -4,16 +4,6 @@ This document provides the technical wiring and circuit architecture for the Sma
 
 ---
 
-## 🎨 Premium Visual Mockups
-
-### 3D Isometric View
-![Smart Lighting Circuit Mockup](/C:/Users/Mohamed%20Tarek/.gemini/antigravity/brain/8e7f346e-2d61-4b4d-870e-8c9d0880da58/smart_lighting_circuit_diagram_1778937576239.png)
-
-### 2D Wideframe Schematic (White Background)
-![Smart Lighting 2D Schematic](/C:/Users/Mohamed Tarek/.gemini/antigravity/brain/8e7f346e-2d61-4b4d-870e-8c9d0880da58/smart_lighting_circuit_2d_white_bg_1778940053938.png)
-
----
-
 ## 📐 Schematic Diagram (Mermaid)
 
 ```mermaid
